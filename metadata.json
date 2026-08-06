@@ -1,0 +1,6 @@
+{
+  "name": "Saudi Payroll System - نظام الرواتب والإنتاجية",
+  "description": "نظام كامل لإدارة الرواتب، الموظفات، تسجيل الحضور والانصراف، مسيرات الرواتب المحاسبية والترحيل، والتقارير الرسمية (WPS / GOSI / Excel) وبوابة الموظفات.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,36 @@
+# Multi-stage Dockerfile for Payroll System API
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependency definitions
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY . .
+
+# Build frontend and compile backend entry point
+RUN npm run build
+
+# Production image
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Copy package info and install production dependencies only
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy compiled backend and dist build output
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/payroll_db.json ./payroll_db.json
+
+EXPOSE 3000
+
+CMD ["node", "dist/server.cjs"]

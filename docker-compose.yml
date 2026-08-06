@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: payroll_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - payroll_network
+    restart: always
+
+  # API Service (Node.js Express + Frontend SPA)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: payroll_api
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://payroll_user:payroll_secret_pass@postgres:5432/payroll_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=production_jwt_secret_key_change_me
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - payroll_network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {if (r.statusCode !== 200) process.exit(1);})"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
+
+  # Worker Service (payrollCalculationService / worker.ts)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: payroll_worker
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://payroll_user:payroll_secret_pass@postgres:5432/payroll_db
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - payroll_network
+    restart: always
+
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: payroll_postgres
+    environment:
+      POSTGRES_DB: payroll_db
+      POSTGRES_USER: payroll_user
+      POSTGRES_PASSWORD: payroll_secret_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    networks:
+      - payroll_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payroll_user -d payroll_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  # Redis Service
+  redis:
+    image: redis:7-alpine
+    container_name: payroll_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - payroll_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+networks:
+  payroll_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

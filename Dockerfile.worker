@@ -1,0 +1,37 @@
+# Multi-stage Dockerfile for Payroll System Worker Service (payrollCalculationService / worker.ts)
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependency definitions
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy full application codebase
+COPY . .
+
+# Build application
+RUN npm run build
+
+# Production image
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Copy package definitions and install production dependencies
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy application files needed for worker service execution
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/worker.ts ./worker.ts
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/payroll_db.json ./payroll_db.json
+
+# Launch the worker process
+CMD ["npx", "tsx", "worker.ts"]

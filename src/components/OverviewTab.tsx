@@ -2,6 +2,7 @@ import React from 'react';
 import { Employee, PayrollRun, SystemConfig } from '../types';
 import { formatCurrency } from '../utils/currency';
 import { Users, DollarSign, ArrowUpRight, TrendingUp, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 interface OverviewTabProps {
   employees: Employee[];
@@ -16,6 +17,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   config,
   onNavigate
 }) => {
+  const { t } = useLanguage();
   const activeCount = employees.filter(e => e.status === 'active').length;
   const totalBaseSalaries = employees.reduce((acc, e) => acc + e.basicSalary, 0);
   const avgSalary = activeCount > 0 ? totalBaseSalaries / activeCount : 0;
@@ -28,9 +30,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       {/* Welcome Banner */}
       <div className="p-5 rounded-lg bg-white border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-base font-bold text-slate-800 tracking-tight">Financial & Payroll Overview</h2>
+          <h2 className="text-base font-bold text-slate-800 tracking-tight">{t('overview')}</h2>
           <p className="text-xs text-slate-500 mt-1">
-            Express Backend API modular architecture controlling salary calculation, GOSI, taxes, and WPS bank file outputs.
+            {t('appName')}
           </p>
         </div>
         <div className="flex gap-3">
@@ -39,7 +41,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             onClick={() => onNavigate('payroll')}
             className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer flex items-center gap-2"
           >
-            <span>Process Monthly Payroll</span>
+            <span>{t('calculatePayroll')}</span>
             <ArrowUpRight className="w-4 h-4" />
           </button>
         </div>
@@ -48,25 +50,25 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Active Headcount</div>
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('totalEmployees')}</div>
           <div className="text-2xl font-bold text-slate-900 mt-1 font-mono">{activeCount}</div>
-          <div className="text-[10px] text-green-600 font-bold mt-1">100% active contracts enrolled</div>
+          <div className="text-[10px] text-green-600 font-bold mt-1">100% active</div>
         </div>
 
         <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Gross Payroll</div>
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('totalGrossPay')}</div>
           <div className="text-2xl font-bold text-slate-900 mt-1 font-mono">
             {formatCurrency(totalGross, config.currencySymbol)}
           </div>
-          <div className="text-[10px] text-slate-500 font-medium mt-1">Monthly gross liabilities</div>
+          <div className="text-[10px] text-slate-500 font-medium mt-1">{t('currencySar')}</div>
         </div>
 
         <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Net Disbursement (WPS)</div>
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('netPayable')}</div>
           <div className="text-2xl font-bold text-slate-900 mt-1 font-mono">
             {formatCurrency(totalNet, config.currencySymbol)}
           </div>
-          <div className="text-[10px] text-blue-600 font-bold mt-1">Auto-calculated after taxes & GOSI</div>
+          <div className="text-[10px] text-blue-600 font-bold mt-1">WPS / GOSI</div>
         </div>
 
         <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
@@ -74,7 +76,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="text-2xl font-bold text-slate-900 mt-1 font-mono">
             {formatCurrency(avgSalary, config.currencySymbol)}
           </div>
-          <div className="text-[10px] text-slate-500 font-medium mt-1">Across all active employees</div>
+          <div className="text-[10px] text-slate-500 font-medium mt-1">{t('currencySar')}</div>
         </div>
       </div>
 
@@ -84,8 +86,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-lg p-5 shadow-xs">
           <div className="flex justify-between items-center pb-4 border-b border-slate-200">
             <div>
-              <h3 className="text-sm font-bold text-slate-800">Latest Payroll Batch Execution</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Calculated via <code className="text-blue-600 font-mono">PayrollCalculationService</code></p>
+              <h3 className="text-sm font-bold text-slate-800">{t('latestPayrollRun')}</h3>
+              <p className="text-xs text-slate-500 mt-0.5">PayrollEngine</p>
             </div>
             {latestRun ? (
               <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -93,10 +95,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   ? 'bg-green-100 text-green-700' 
                   : 'bg-orange-100 text-orange-700'
               }`}>
-                {latestRun.status}
+                {t(latestRun.status, latestRun.status)}
               </span>
             ) : (
-              <span className="text-xs text-slate-400">No Run Recorded</span>
+              <span className="text-xs text-slate-400">--</span>
             )}
           </div>
 
@@ -104,19 +106,19 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div className="mt-4 space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded border border-slate-200 font-mono text-xs">
                 <div>
-                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">Run ID</div>
+                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">{t('employeeCode')}</div>
                   <div className="font-bold text-slate-900 mt-0.5">{latestRun.runCode}</div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">Employees</div>
+                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">{t('totalEmployees')}</div>
                   <div className="font-bold text-slate-900 mt-0.5">{latestRun.totalEmployees}</div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">Deductions</div>
+                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">{t('totalDeductions')}</div>
                   <div className="font-bold text-red-600 mt-0.5">{formatCurrency(latestRun.totalDeductions, config.currencySymbol)}</div>
                 </div>
                 <div>
-                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">Employer GOSI</div>
+                  <div className="text-slate-500 text-[10px] uppercase font-sans font-semibold">{t('employerGosiShare')}</div>
                   <div className="font-bold text-blue-600 mt-0.5">{formatCurrency(latestRun.totalEmployerContributions, config.currencySymbol)}</div>
                 </div>
               </div>
@@ -127,14 +129,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   onClick={() => onNavigate('payslips')}
                   className="px-3 py-1.5 text-xs font-semibold rounded bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-all cursor-pointer"
                 >
-                  View Payslips
+                  {t('payslips')}
                 </button>
                 <button
                   id="btn-overview-view-reports"
                   onClick={() => onNavigate('reports')}
                   className="px-3 py-1.5 text-xs font-semibold rounded bg-blue-600 hover:bg-blue-700 text-white transition-all cursor-pointer"
                 >
-                  Export WPS File
+                  {t('downloadWps')}
                 </button>
               </div>
             </div>

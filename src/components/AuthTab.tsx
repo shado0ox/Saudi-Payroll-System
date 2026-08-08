@@ -1,376 +1,735 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Key, RefreshCw, UserCheck, Lock, CheckCircle2, XCircle, AlertTriangle, Terminal, Code2, Users } from 'lucide-react';
+import {
+  Users,
+  UserPlus,
+  Pencil,
+  KeyRound,
+  Power,
+  Trash2,
+  RefreshCw,
+  X,
+  AlertCircle,
+  CheckCircle2,
+  ShieldCheck
+} from 'lucide-react';
 import { UserRole } from '../types';
 
+type ManagedUser = {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+  status: 'active' | 'suspended';
+  createdAt?: string;
+};
+
+type RoleRecord = {
+  id: string;
+  name: UserRole;
+  displayName: string;
+  description?: string;
+};
+
+type UserForm = {
+  username: string;
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+};
+
+const emptyForm: UserForm = {
+  username: '',
+  email: '',
+  password: '',
+  firstName: '',
+  lastName: '',
+  role: 'viewer'
+};
+
 export const AuthTab: React.FC = () => {
-  const { user, accessToken, refreshToken, refreshAuthToken, authFetch } = useAuth();
-  const [usersList, setUsersList] = useState<any[]>([]);
-  const [rolesList, setRolesList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [testEndpoint, setTestEndpoint] = useState<{ method: string; url: string; label: string }>({
-    method: 'GET',
-    url: '/api/employees',
-    label: 'Get Employee Directory'
-  });
-  const [testResult, setTestResult] = useState<any>(null);
-  const [testLoading, setTestLoading] = useState(false);
+  const { user, authFetch } = useAuth();
 
-  // Decode JWT Payload locally for inspection
-  const getDecodedPayload = (token: string | null) => {
-    if (!token) return null;
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      return JSON.parse(jsonPayload);
-    } catch (e) {
-      return null;
-    }
+  const [usersList, setUsersList] = useState<ManagedUser[]>([]);
+  const [rolesList, setRolesList] = useState<RoleRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [passwordUser, setPasswordUser] = useState<ManagedUser | null>(null);
+
+  const [form, setForm] = useState<UserForm>(emptyForm);
+  const [newPassword, setNewPassword] = useState('');
+
+  const clearAlerts = () => {
+    setMessage(null);
+    setError(null);
   };
-
-  const decoded = getDecodedPayload(accessToken);
 
   const fetchUsersAndRoles = async () => {
     setLoading(true);
+    clearAlerts();
+
     try {
       const res = await authFetch('/api/auth/users');
       const data = await res.json();
-      if (data.success) {
-        setUsersList(data.data.users);
-        setRolesList(data.data.roles);
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'تعذر تحميل المستخدمين.');
       }
-    } catch (err) {
-      console.error('Failed to load users list:', err);
+
+      setUsersList(data.data.users || []);
+      setRolesList(data.data.roles || []);
+    } catch (err: any) {
+      setError(err.message || 'تعذر تحميل المستخدمين.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchUsersAndRoles();
-  }, []);
+    if (user?.role === 'admin') {
+      fetchUsersAndRoles();
+    } else {
+      setLoading(false);
+    }
+  }, [user?.role]);
 
-  const handleManualRefresh = async () => {
-    setRefreshing(true);
-    await refreshAuthToken();
-    setTimeout(() => setRefreshing(false), 500);
+  const openCreate = () => {
+    clearAlerts();
+    setEditingUser(null);
+    setPasswordUser(null);
+    setForm(emptyForm);
+    setShowCreate(true);
   };
 
-  const handleTestApi = async (method: string, url: string, payload?: any) => {
-    setTestLoading(true);
-    setTestResult(null);
+  const openEdit = (target: ManagedUser) => {
+    clearAlerts();
+    setShowCreate(false);
+    setPasswordUser(null);
+    setEditingUser(target);
+    setForm({
+      username: target.username,
+      email: target.email,
+      password: '',
+      firstName: target.firstName,
+      lastName: target.lastName,
+      role: target.role
+    });
+  };
+
+  const closeForm = () => {
+    setShowCreate(false);
+    setEditingUser(null);
+    setForm(emptyForm);
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearAlerts();
+
+    if (
+      !form.username.trim() ||
+      !form.email.trim() ||
+      !form.password ||
+      !form.firstName.trim() ||
+      !form.lastName.trim()
+    ) {
+      setError('جميع الحقول مطلوبة.');
+      return;
+    }
+
+    if (form.password.length < 8) {
+      setError('كلمة المرور يجب ألا تقل عن 8 أحرف.');
+      return;
+    }
+
+    setSaving(true);
+
     try {
-      const res = await authFetch(url, {
-        method,
-        body: payload ? JSON.stringify(payload) : undefined
+      const res = await authFetch('/api/auth/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: form.username.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          role: form.role
+        })
       });
+
       const data = await res.json();
-      setTestResult({
-        status: res.status,
-        statusText: res.statusText,
-        ok: res.ok,
-        data
-      });
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'تعذر إنشاء المستخدم.');
+      }
+
+      setMessage('تم إنشاء المستخدم بنجاح.');
+      closeForm();
+      await fetchUsersAndRoles();
+      setMessage('تم إنشاء المستخدم بنجاح.');
     } catch (err: any) {
-      setTestResult({
-        status: 500,
-        ok: false,
-        data: { error: err.message }
-      });
+      setError(err.message || 'تعذر إنشاء المستخدم.');
     } finally {
-      setTestLoading(false);
+      setSaving(false);
     }
   };
 
-  const rbacMatrix = [
-    { module: 'Employee Directory (Read)', path: 'GET /api/employees', admin: true, hr: true, acc: true, viewer: true },
-    { module: 'Employee Management (Write/Delete)', path: 'POST/DELETE /api/employees', admin: true, hr: true, acc: false, viewer: false },
-    { module: 'Attendance & Overtime Ledger', path: 'POST /api/attendance', admin: true, hr: true, acc: false, viewer: false },
-    { module: 'Payroll Calculation & Approval', path: 'POST /api/payroll/runs/*', admin: true, hr: false, acc: true, viewer: false },
-    { module: 'WPS Bank File & CSV Export', path: 'GET /api/reports/wps/*', admin: true, hr: false, acc: true, viewer: false },
-    { module: 'System Tax & GOSI Settings', path: 'PUT /api/settings', admin: true, hr: false, acc: false, viewer: false },
-    { module: 'Worker & DB Migration Script', path: 'POST /api/system/migrate/run', admin: true, hr: false, acc: false, viewer: false }
-  ];
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!editingUser) return;
+
+    clearAlerts();
+    setSaving(true);
+
+    try {
+      const res = await authFetch(`/api/auth/users/${editingUser.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          username: form.username.trim(),
+          email: form.email.trim(),
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          role: form.role
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'تعذر تعديل المستخدم.');
+      }
+
+      closeForm();
+      await fetchUsersAndRoles();
+      setMessage('تم تحديث بيانات المستخدم.');
+    } catch (err: any) {
+      setError(err.message || 'تعذر تعديل المستخدم.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!passwordUser) return;
+
+    clearAlerts();
+
+    if (newPassword.length < 8) {
+      setError('كلمة المرور يجب ألا تقل عن 8 أحرف.');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const res = await authFetch(
+        `/api/auth/users/${passwordUser.id}/password`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ password: newPassword })
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'تعذر تغيير كلمة المرور.');
+      }
+
+      setPasswordUser(null);
+      setNewPassword('');
+      setMessage('تم تغيير كلمة المرور وإلغاء جلسات المستخدم السابقة.');
+    } catch (err: any) {
+      setError(err.message || 'تعذر تغيير كلمة المرور.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (target: ManagedUser) => {
+    clearAlerts();
+
+    const nextStatus = target.status === 'active' ? 'suspended' : 'active';
+
+    if (target.id === user?.id && nextStatus === 'suspended') {
+      setError('لا يمكنك إيقاف حسابك الحالي.');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const res = await authFetch(`/api/auth/users/${target.id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: nextStatus })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'تعذر تغيير حالة المستخدم.');
+      }
+
+      await fetchUsersAndRoles();
+      setMessage(
+        nextStatus === 'active'
+          ? 'تم تفعيل المستخدم.'
+          : 'تم إيقاف المستخدم.'
+      );
+    } catch (err: any) {
+      setError(err.message || 'تعذر تغيير حالة المستخدم.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (target: ManagedUser) => {
+    clearAlerts();
+
+    if (target.id === user?.id) {
+      setError('لا يمكنك حذف حسابك الحالي.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `هل تريد حذف المستخدم "${target.username}" نهائيًا؟`
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+
+    try {
+      const res = await authFetch(`/api/auth/users/${target.id}`, {
+        method: 'DELETE'
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'تعذر حذف المستخدم.');
+      }
+
+      await fetchUsersAndRoles();
+      setMessage('تم حذف المستخدم.');
+    } catch (err: any) {
+      setError(err.message || 'تعذر حذف المستخدم.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (user?.role !== 'admin') {
+    return (
+      <div
+        className="bg-white border border-slate-200 rounded-xl p-8 text-center"
+        dir="rtl"
+      >
+        <ShieldCheck className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+        <h2 className="text-lg font-bold text-slate-800">
+          إدارة المستخدمين
+        </h2>
+        <p className="text-sm text-slate-500 mt-2">
+          هذه الصفحة متاحة لمدير النظام فقط.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div id="jwt-auth-tab" className="space-y-6">
-      {/* Banner */}
-      <div className="p-5 bg-white border border-slate-200 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-blue-600" />
-            <h2 className="text-base font-bold text-slate-800">JWT Authentication & Role-Based Access Control (RBAC)</h2>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Full authentication engine with bcrypt password hashing, JWT Access Tokens, Refresh Tokens, and 4 role authorization tiers.
-          </p>
-        </div>
-
-        <button
-          onClick={handleManualRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3.5 py-1.5 rounded transition-all cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          <span>Refresh Access Token</span>
-        </button>
-      </div>
-
-      {/* Active User Token Inspector */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Active Token Card */}
-        <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4 shadow-xs">
-          <div className="flex justify-between items-center border-b border-slate-200 pb-2.5">
+    <div className="space-y-5" dir="rtl">
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <div>
             <div className="flex items-center gap-2">
-              <Key className="w-4 h-4 text-blue-600" />
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Active JWT Access Token</h3>
+              <Users className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-bold text-slate-800">
+                إدارة المستخدمين والصلاحيات
+              </h2>
             </div>
-            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded uppercase">
-              VALID SESSION
-            </span>
+            <p className="text-sm text-slate-500 mt-1">
+              الحسابات المعروضة مرتبطة مباشرة بقاعدة بيانات PostgreSQL.
+            </p>
           </div>
 
-          <div className="space-y-3 font-mono text-xs">
-            <div>
-              <span className="text-[10px] font-sans font-bold text-slate-500 block">Logged User:</span>
-              <span className="text-slate-900 font-bold text-sm">
-                {user?.firstName} {user?.lastName} (@{user?.username})
-              </span>
-              <span className="ml-2 text-[10px] font-mono bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded uppercase">
-                {user?.role}
-              </span>
-            </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={fetchUsersAndRoles}
+              disabled={loading || saving}
+              className="inline-flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              تحديث
+            </button>
 
-            <div>
-              <span className="text-[10px] font-sans font-bold text-slate-500 block">Bearer Access Token (Header):</span>
-              <div className="bg-slate-900 text-green-400 p-2.5 rounded text-[10px] font-mono break-all max-h-20 overflow-y-auto">
-                {accessToken || 'No token active'}
-              </div>
-            </div>
-
-            <div>
-              <span className="text-[10px] font-sans font-bold text-slate-500 block">Refresh Token:</span>
-              <div className="bg-slate-900 text-yellow-400 p-2.5 rounded text-[10px] font-mono break-all max-h-20 overflow-y-auto">
-                {refreshToken || 'No refresh token active'}
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold"
+            >
+              <UserPlus className="w-4 h-4" />
+              مستخدم جديد
+            </button>
           </div>
-        </div>
-
-        {/* Decoded JWT Payload Card */}
-        <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4 shadow-xs">
-          <div className="flex justify-between items-center border-b border-slate-200 pb-2.5">
-            <div className="flex items-center gap-2">
-              <Code2 className="w-4 h-4 text-purple-600" />
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Decoded Token Claims Payload</h3>
-            </div>
-            <span className="text-[10px] bg-purple-100 text-purple-800 font-mono font-bold px-2 py-0.5 rounded">
-              HS256 ALGORITHM
-            </span>
-          </div>
-
-          <div className="bg-slate-900 p-3 rounded text-green-400 font-mono text-xs overflow-x-auto max-h-60">
-            <pre>{JSON.stringify(decoded, null, 2)}</pre>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Decoded directly from client JWT without server roundtrip. Verified server-side via secret key in <code className="text-blue-600 font-mono font-semibold">jwtHelper.ts</code>.
-          </p>
         </div>
       </div>
 
-      {/* Users Database Table */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-blue-600" />
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              System Database Users & Password Hash Ledger (<code className="text-blue-600 font-mono">users</code> table in schema.sql)
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {message && (
+        <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{message}</span>
+        </div>
+      )}
+
+      {(showCreate || editingUser) && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+            <h3 className="font-bold text-slate-800">
+              {editingUser ? 'تعديل المستخدم' : 'إضافة مستخدم جديد'}
             </h3>
+
+            <button
+              type="button"
+              onClick={closeForm}
+              className="p-1.5 rounded hover:bg-slate-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <span className="text-xs font-mono text-slate-500">{usersList.length} Accounts Seeded</span>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="py-2.5 px-4">User</th>
-                <th className="py-2.5 px-4">Username / Email</th>
-                <th className="py-2.5 px-4">Role Tier</th>
-                <th className="py-2.5 px-4">Password Hash</th>
-                <th className="py-2.5 px-4 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-800 font-mono">
-              {usersList.map((u: any) => (
-                <tr key={u.id} className="hover:bg-slate-50">
-                  <td className="py-2.5 px-4 font-sans font-bold text-slate-900">
-                    {u.firstName} {u.lastName}
-                    <div className="text-[10px] text-slate-400 font-mono font-normal">{u.id}</div>
-                  </td>
-                  <td className="py-2.5 px-4">
-                    <div className="font-bold text-slate-800">@{u.username}</div>
-                    <div className="text-[10px] text-slate-500">{u.email}</div>
-                  </td>
-                  <td className="py-2.5 px-4">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                      u.role === 'admin' ? 'bg-blue-100 text-blue-800' :
-                      u.role === 'hr_manager' ? 'bg-purple-100 text-purple-800' :
-                      u.role === 'accountant' ? 'bg-emerald-100 text-emerald-800' :
-                      'bg-slate-100 text-slate-800'
-                    }`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 font-mono text-[10px] text-slate-500 max-w-xs truncate">
-                    bcrypt ($2a$10$...) hashed
-                  </td>
-                  <td className="py-2.5 px-4 text-right font-sans">
-                    <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Active
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* RBAC Permission Matrix */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4 shadow-xs">
-        <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-          <Lock className="w-4 h-4 text-amber-600" />
-          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-            Role Authorization Permission Matrix (enforced by <code className="text-blue-600 font-mono">requireRole</code> middleware)
-          </h3>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="py-2.5 px-4">System Endpoint / Action</th>
-                <th className="py-2.5 px-4 font-mono text-[11px]">Route</th>
-                <th className="py-2.5 px-4 text-center">Admin</th>
-                <th className="py-2.5 px-4 text-center">HR Manager</th>
-                <th className="py-2.5 px-4 text-center">Accountant</th>
-                <th className="py-2.5 px-4 text-center">Viewer</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-800 font-sans">
-              {rbacMatrix.map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-50">
-                  <td className="py-2.5 px-4 font-bold text-slate-900">{row.module}</td>
-                  <td className="py-2.5 px-4 font-mono text-[11px] text-blue-700">{row.path}</td>
-                  <td className="py-2.5 px-4 text-center">
-                    {row.admin ? (
-                      <span className="inline-block bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">ALLOWED</span>
-                    ) : (
-                      <span className="inline-block bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded text-[10px]">DENIED</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-4 text-center">
-                    {row.hr ? (
-                      <span className="inline-block bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">ALLOWED</span>
-                    ) : (
-                      <span className="inline-block bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded text-[10px]">DENIED</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-4 text-center">
-                    {row.acc ? (
-                      <span className="inline-block bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">ALLOWED</span>
-                    ) : (
-                      <span className="inline-block bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded text-[10px]">DENIED</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-4 text-center">
-                    {row.viewer ? (
-                      <span className="inline-block bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">ALLOWED</span>
-                    ) : (
-                      <span className="inline-block bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded text-[10px]">DENIED</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Live Middleware Permission Tester */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-emerald-600" />
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Live Express API Role Enforcement Inspector
-            </h3>
-          </div>
-          <span className="text-xs font-mono text-slate-500">
-            Active Role: <strong className="text-blue-700 uppercase font-bold">{user?.role}</strong>
-          </span>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => handleTestApi('GET', '/api/employees')}
-            className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs font-mono font-semibold text-slate-800 cursor-pointer shadow-xs"
+          <form
+            onSubmit={editingUser ? handleUpdate : handleCreate}
+            className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4"
           >
-            <span className="text-emerald-600 font-bold mr-1">GET</span> /api/employees
-          </button>
+            <Field label="الاسم الأول">
+              <input
+                value={form.firstName}
+                onChange={e => setForm({ ...form, firstName: e.target.value })}
+                className="input"
+                required
+              />
+            </Field>
 
-          <button
-            onClick={() => handleTestApi('POST', '/api/employees', { firstName: 'Test', lastName: 'User', basicSalary: 10000 })}
-            className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs font-mono font-semibold text-slate-800 cursor-pointer shadow-xs"
-          >
-            <span className="text-blue-600 font-bold mr-1">POST</span> /api/employees (HR/Admin)
-          </button>
+            <Field label="اسم العائلة">
+              <input
+                value={form.lastName}
+                onChange={e => setForm({ ...form, lastName: e.target.value })}
+                className="input"
+                required
+              />
+            </Field>
 
-          <button
-            onClick={() => handleTestApi('POST', '/api/payroll/runs/calculate', { period: '2026-08', title: 'Test Run' })}
-            className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs font-mono font-semibold text-slate-800 cursor-pointer shadow-xs"
-          >
-            <span className="text-blue-600 font-bold mr-1">POST</span> /api/payroll/runs/calculate (Accountant/Admin)
-          </button>
+            <Field label="اسم المستخدم">
+              <input
+                value={form.username}
+                onChange={e => setForm({ ...form, username: e.target.value })}
+                className="input"
+                required
+              />
+            </Field>
 
-          <button
-            onClick={() => handleTestApi('PUT', '/api/settings', { companyName: 'New Company' })}
-            className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs font-mono font-semibold text-slate-800 cursor-pointer shadow-xs"
-          >
-            <span className="text-amber-600 font-bold mr-1">PUT</span> /api/settings (Admin Only)
-          </button>
+            <Field label="البريد الإلكتروني">
+              <input
+                type="email"
+                value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                className="input"
+                required
+              />
+            </Field>
 
-          <button
-            onClick={() => handleTestApi('POST', '/api/system/migrate/run')}
-            className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs font-mono font-semibold text-slate-800 cursor-pointer shadow-xs"
-          >
-            <span className="text-purple-600 font-bold mr-1">POST</span> /api/system/migrate/run (Admin Only)
-          </button>
-        </div>
+            {!editingUser && (
+              <Field label="كلمة المرور">
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={e => setForm({ ...form, password: e.target.value })}
+                  className="input"
+                  minLength={8}
+                  required
+                />
+              </Field>
+            )}
 
-        {testResult && (
-          <div className="bg-slate-900 p-4 rounded-lg border border-slate-800 space-y-2 font-mono text-xs">
-            <div className="flex justify-between items-center text-slate-400 border-b border-slate-800 pb-2 text-[11px]">
-              <span>RESPONSE STATUS:</span>
-              <span className={testResult.ok ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                {testResult.status} {testResult.statusText || (testResult.ok ? 'OK' : 'FORBIDDEN / ERROR')}
-              </span>
+            <Field label="الصلاحية">
+              <select
+                value={form.role}
+                onChange={e =>
+                  setForm({ ...form, role: e.target.value as UserRole })
+                }
+                className="input"
+              >
+                {rolesList.map(role => (
+                  <option key={role.id} value={role.name}>
+                    {role.displayName}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="md:col-span-2 flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeForm}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-semibold"
+              >
+                إلغاء
+              </button>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+              >
+                {saving
+                  ? 'جاري الحفظ...'
+                  : editingUser
+                    ? 'حفظ التعديلات'
+                    : 'إنشاء المستخدم'}
+              </button>
             </div>
-            <pre className={testResult.ok ? 'text-green-400 overflow-x-auto max-h-60 p-2' : 'text-red-400 overflow-x-auto max-h-60 p-2'}>
-              {JSON.stringify(testResult.data, null, 2)}
-            </pre>
+          </form>
+        </div>
+      )}
+
+      {passwordUser && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+            <div>
+              <h3 className="font-bold text-slate-800">
+                تغيير كلمة المرور
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                المستخدم: {passwordUser.username}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPasswordUser(null);
+                setNewPassword('');
+              }}
+              className="p-1.5 rounded hover:bg-slate-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <form
+            onSubmit={handlePasswordChange}
+            className="p-5 flex flex-col sm:flex-row gap-3"
+          >
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              placeholder="كلمة المرور الجديدة"
+              minLength={8}
+              className="input flex-1"
+              required
+            />
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+            >
+              حفظ كلمة المرور
+            </button>
+          </form>
+        </div>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-800">المستخدمون</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              إجمالي الحسابات: {usersList.length}
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-10 text-center text-slate-500">
+            جاري تحميل المستخدمين...
+          </div>
+        ) : usersList.length === 0 ? (
+          <div className="p-10 text-center text-slate-500">
+            لا يوجد مستخدمون.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr className="text-slate-600">
+                  <th className="text-right px-4 py-3">المستخدم</th>
+                  <th className="text-right px-4 py-3">اسم الدخول</th>
+                  <th className="text-right px-4 py-3">الصلاحية</th>
+                  <th className="text-right px-4 py-3">الحالة</th>
+                  <th className="text-left px-4 py-3">الإجراءات</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {usersList.map(target => {
+                  const isSelf = target.id === user?.id;
+
+                  return (
+                    <tr key={target.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-900">
+                          {target.firstName} {target.lastName}
+                          {isSelf && (
+                            <span className="mr-2 text-[10px] px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">
+                              حسابك
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {target.email}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3 font-mono text-xs">
+                        @{target.username}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span className="inline-flex px-2 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-700">
+                          {rolesList.find(r => r.name === target.role)?.displayName ||
+                            target.role}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {target.status === 'active' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            نشط
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700">
+                            <Power className="w-3.5 h-3.5" />
+                            موقوف
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <ActionButton
+                            title="تعديل"
+                            onClick={() => openEdit(target)}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </ActionButton>
+
+                          <ActionButton
+                            title="تغيير كلمة المرور"
+                            onClick={() => {
+                              clearAlerts();
+                              setEditingUser(null);
+                              setShowCreate(false);
+                              setPasswordUser(target);
+                              setNewPassword('');
+                            }}
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </ActionButton>
+
+                          <ActionButton
+                            title={
+                              target.status === 'active'
+                                ? 'إيقاف المستخدم'
+                                : 'تفعيل المستخدم'
+                            }
+                            disabled={isSelf && target.status === 'active'}
+                            onClick={() => handleToggleStatus(target)}
+                          >
+                            <Power className="w-4 h-4" />
+                          </ActionButton>
+
+                          <ActionButton
+                            title="حذف المستخدم"
+                            danger
+                            disabled={isSelf}
+                            onClick={() => handleDelete(target)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </ActionButton>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
     </div>
   );
 };
+
+const Field: React.FC<{
+  label: string;
+  children: React.ReactNode;
+}> = ({ label, children }) => (
+  <label className="block">
+    <span className="block text-sm font-semibold text-slate-700 mb-1.5">
+      {label}
+    </span>
+    {children}
+  </label>
+);
+
+const ActionButton: React.FC<{
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+  danger?: boolean;
+}> = ({
+  title,
+  onClick,
+  children,
+  disabled = false,
+  danger = false
+}) => (
+  <button
+    type="button"
+    title={title}
+    onClick={onClick}
+    disabled={disabled}
+    className={`p-2 rounded-lg border transition disabled:opacity-30 disabled:cursor-not-allowed ${
+      danger
+        ? 'border-red-200 text-red-600 hover:bg-red-50'
+        : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+    }`}
+  >
+    {children}
+  </button>
+);

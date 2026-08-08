@@ -3,12 +3,14 @@ import { CompanyModel } from '../models/CompanyModel';
 import { AuthenticatedRequest } from '../middlewares/authMiddleware';
 
 export class CompanyController {
-  /**
-   * GET /api/companies
-   */
-  static async getCompanies(req: AuthenticatedRequest, res: Response) {
+
+  static async getCompanies(
+    req: AuthenticatedRequest,
+    res: Response
+  ) {
     try {
-      const companies = CompanyModel.getAllCompanies();
+      const companies = await CompanyModel.getAllCompanies();
+
       return res.json({
         success: true,
         data: companies
@@ -16,23 +18,42 @@ export class CompanyController {
     } catch (err: any) {
       return res.status(500).json({
         success: false,
-        error: { code: 'SERVER_ERROR', message: err.message }
+        error: {
+          code: 'SERVER_ERROR',
+          message: err.message
+        }
       });
     }
   }
 
-  /**
-   * GET /api/companies/:id
-   */
-  static async getCompanyById(req: AuthenticatedRequest, res: Response) {
+
+  static async getCompanyById(
+    req: AuthenticatedRequest,
+    res: Response
+  ) {
     try {
       const { id } = req.params;
-      const company = CompanyModel.getById(id);
+
+      // المستخدم يرى شركته فقط
+      if (req.companyId && id !== req.companyId) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Access to another company is not allowed.'
+          }
+        });
+      }
+
+      const company = await CompanyModel.getById(id);
 
       if (!company) {
         return res.status(404).json({
           success: false,
-          error: { code: 'NOT_FOUND', message: 'Company not found' }
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Company not found'
+          }
         });
       }
 
@@ -40,38 +61,86 @@ export class CompanyController {
         success: true,
         data: company
       });
+
     } catch (err: any) {
       return res.status(500).json({
         success: false,
-        error: { code: 'SERVER_ERROR', message: err.message }
+        error: {
+          code: 'SERVER_ERROR',
+          message: err.message
+        }
       });
     }
   }
 
-  /**
-   * PUT /api/companies/:id
-   */
-  static async updateCompany(req: AuthenticatedRequest, res: Response) {
+
+  static async updateCompany(
+    req: AuthenticatedRequest,
+    res: Response
+  ) {
     try {
       const { id } = req.params;
-      const { name, code, crNumber, currency, chartOfAccounts, wpsConfig, accountingApiConfig } = req.body;
 
-      const company = CompanyModel.getById(id);
-      if (!company) {
-        return res.status(404).json({
+      if (req.companyId && id !== req.companyId) {
+        return res.status(403).json({
           success: false,
-          error: { code: 'NOT_FOUND', message: 'Company not found' }
+          error: {
+            code: 'FORBIDDEN',
+            message: 'You cannot modify another company.'
+          }
         });
       }
 
-      const updated = CompanyModel.updateCompany(id, {
-        ...(name && { name }),
-        ...(code && { code }),
-        ...(crNumber && { crNumber }),
-        ...(currency && { currency }),
-        ...(chartOfAccounts && { chartOfAccounts: { ...company.chartOfAccounts, ...chartOfAccounts } }),
-        ...(wpsConfig && { wpsConfig: { ...company.wpsConfig, ...wpsConfig } }),
-        ...(accountingApiConfig && { accountingApiConfig: { ...company.accountingApiConfig, ...accountingApiConfig } })
+      const {
+        name,
+        code,
+        crNumber,
+        currency,
+        chartOfAccounts,
+        wpsConfig,
+        accountingApiConfig
+      } = req.body;
+
+      const company = await CompanyModel.getById(id);
+
+      if (!company) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Company not found'
+          }
+        });
+      }
+
+      const updated = await CompanyModel.updateCompany(id, {
+        ...(name !== undefined && { name }),
+        ...(code !== undefined && {
+          code: String(code).toUpperCase()
+        }),
+        ...(crNumber !== undefined && { crNumber }),
+        ...(currency !== undefined && { currency }),
+
+        ...(chartOfAccounts !== undefined && {
+          chartOfAccounts: {
+            ...company.chartOfAccounts,
+            ...chartOfAccounts
+          }
+        }),
+
+        ...(wpsConfig !== undefined && {
+          wpsConfig: {
+            ...company.wpsConfig,
+            ...wpsConfig
+          }
+        }),
+
+        ...(accountingApiConfig !== undefined && {
+          accountingApiConfig: {
+            ...company.accountingApiConfig,
+            ...accountingApiConfig
+          }
+        })
       });
 
       return res.json({
@@ -79,120 +148,151 @@ export class CompanyController {
         data: updated,
         message: 'Company settings updated successfully.'
       });
+
     } catch (err: any) {
       return res.status(500).json({
         success: false,
-        error: { code: 'SERVER_ERROR', message: err.message }
+        error: {
+          code: 'SERVER_ERROR',
+          message: err.message
+        }
       });
     }
   }
 
-  /**
-   * POST /api/companies
-   */
-  static async createCompany(req: AuthenticatedRequest, res: Response) {
+
+  static async createCompany(
+    req: AuthenticatedRequest,
+    res: Response
+  ) {
     try {
-      const { name, code, crNumber, currency, chartOfAccounts, wpsConfig, accountingApiConfig } = req.body;
+      const {
+        name,
+        code,
+        crNumber,
+        currency,
+        chartOfAccounts,
+        wpsConfig,
+        accountingApiConfig
+      } = req.body;
 
       if (!name || !code) {
         return res.status(400).json({
           success: false,
-          error: { code: 'INVALID_INPUT', message: 'Company name and code are required.' }
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'Company name and code are required.'
+          }
         });
       }
 
-      const defaultCoa = chartOfAccounts || {
-        salariesAccountCode: '5101',
-        salariesAccountName: 'مصروف الأجور والبدلات',
-        gosiExpenseAccountCode: '5105',
-        gosiExpenseAccountName: 'مصروف مساهمة التأمينات - صاحب العمل',
-        payrollPayableAccountCode: '2101',
-        payrollPayableAccountName: 'ذمم الرواتب الصافية المستحقة (WPS)',
-        gosiPayableAccountCode: '2105',
-        gosiPayableAccountName: 'مستحقات التأمينات الاجتماعية'
-      };
+      const existing =
+        await CompanyModel.getByCode(code);
 
-      const defaultWps = wpsConfig || {
-        payerId: '7000000000',
-        payerBankCode: 'RIBL',
-        payerIban: 'SA0000000000000000000000',
-        establishmentName: name
-      };
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'COMPANY_EXISTS',
+            message: 'Company code already exists.'
+          }
+        });
+      }
 
-      const defaultApi = accountingApiConfig || {
-        apiUrl: `/api/mock/accounting/${code.toLowerCase()}`,
-        apiKey: `${code.toLowerCase()}_secret_key`,
-        autoSyncOnApproval: true
-      };
-
-      const newCompany = CompanyModel.createCompany({
-        name,
-        code: code.toUpperCase(),
-        crNumber: crNumber || '1010000000',
-        currency: currency || 'SAR',
-        currencySymbol: 'ر.س',
-        chartOfAccounts: defaultCoa,
-        wpsConfig: defaultWps,
-        accountingApiConfig: defaultApi,
-        status: 'active'
-      });
+      const newCompany =
+        await CompanyModel.createCompany({
+          name,
+          code: String(code).toUpperCase(),
+          crNumber: crNumber || null,
+          currency: currency || 'SAR',
+          currencySymbol: 'ر.س',
+          chartOfAccounts: chartOfAccounts || {},
+          wpsConfig: wpsConfig || {},
+          accountingApiConfig:
+            accountingApiConfig || {},
+          status: 'active'
+        });
 
       return res.status(201).json({
         success: true,
         data: newCompany,
         message: 'New company registered successfully.'
       });
+
     } catch (err: any) {
       return res.status(500).json({
         success: false,
-        error: { code: 'SERVER_ERROR', message: err.message }
+        error: {
+          code: 'SERVER_ERROR',
+          message: err.message
+        }
       });
     }
   }
 
-  /**
-   * POST /api/companies/:id/test-api
-   */
-  static async testAccountingApi(req: AuthenticatedRequest, res: Response) {
+
+  static async testAccountingApi(
+    req: AuthenticatedRequest,
+    res: Response
+  ) {
     try {
       const { id } = req.params;
-      const company = CompanyModel.getById(id);
+
+      if (req.companyId && id !== req.companyId) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Access to another company is not allowed.'
+          }
+        });
+      }
+
+      const company = await CompanyModel.getById(id);
 
       if (!company) {
         return res.status(404).json({
           success: false,
-          error: { code: 'NOT_FOUND', message: 'Company not found' }
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Company not found'
+          }
         });
       }
 
-      const { apiUrl, apiKey } = company.accountingApiConfig;
+      const apiConfig: any =
+        company.accountingApiConfig || {};
 
-      // Simulate handshake and payload validation with custom ERP endpoint
+      if (!apiConfig.apiUrl) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'ACCOUNTING_API_NOT_CONFIGURED',
+            message:
+              'Accounting API has not been configured yet.'
+          }
+        });
+      }
+
       return res.json({
         success: true,
         data: {
           companyId: company.id,
           companyName: company.name,
-          endpointTested: apiUrl,
-          authStatus: 'VALID_API_KEY',
-          chartOfAccountsMapped: true,
-          samplePayload: {
-            reference: `TEST-PAY-${Date.now()}`,
-            lines: [
-              { accountCode: company.chartOfAccounts.salariesAccountCode, accountName: company.chartOfAccounts.salariesAccountName, type: 'debit', amount: 50000 },
-              { accountCode: company.chartOfAccounts.gosiExpenseAccountCode, accountName: company.chartOfAccounts.gosiExpenseAccountName, type: 'debit', amount: 6000 },
-              { accountCode: company.chartOfAccounts.payrollPayableAccountCode, accountName: company.chartOfAccounts.payrollPayableAccountName, type: 'credit', amount: 45000 },
-              { accountCode: company.chartOfAccounts.gosiPayableAccountCode, accountName: company.chartOfAccounts.gosiPayableAccountName, type: 'credit', amount: 11000 }
-            ]
-          },
-          latencyMs: Math.floor(Math.random() * 40) + 15
+          endpointConfigured: apiConfig.apiUrl,
+          configured: true
         },
-        message: `Successfully connected to Accounting API for ${company.name}`
+        message:
+          'Accounting API configuration is available.'
       });
+
     } catch (err: any) {
       return res.status(500).json({
         success: false,
-        error: { code: 'SERVER_ERROR', message: err.message }
+        error: {
+          code: 'SERVER_ERROR',
+          message: err.message
+        }
       });
     }
   }

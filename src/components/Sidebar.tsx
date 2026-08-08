@@ -13,6 +13,7 @@ import {
   BookOpen,
   Building2
 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 export type TabType = 
   | 'overview' 
@@ -41,19 +42,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   employeeCount,
   payrollRunStatus
 }) => {
+  const { t } = useLanguage();
+
   const menuItems = [
-    { id: 'overview' as TabType, label: 'Overview', icon: LayoutDashboard },
-    { id: 'companies' as TabType, label: 'Company Hub (Multi-Tenant)', icon: Building2, highlight: true },
-    { id: 'employees' as TabType, label: 'Employee Directory', icon: Users, badge: employeeCount },
-    { id: 'payroll' as TabType, label: 'Payroll Batches', icon: Calculator, statusDot: payrollRunStatus },
-    { id: 'journal' as TabType, label: 'Accounting Journal', icon: BookOpen },
-    { id: 'payslips' as TabType, label: 'Payslip Hub', icon: FileText },
-    { id: 'attendance' as TabType, label: 'Attendance & OT', icon: Clock },
-    { id: 'reports' as TabType, label: 'Reports & WPS', icon: Download },
-    { id: 'auth' as TabType, label: 'Users & JWT Auth', icon: ShieldCheck },
-    { id: 'architecture' as TabType, label: 'Architecture', icon: FolderTree },
-    { id: 'worker' as TabType, label: 'CLI & Worker', icon: Terminal },
-    { id: 'settings' as TabType, label: 'Settings', icon: Settings }
+    { id: 'overview' as TabType, label: t('overview'), icon: LayoutDashboard },
+    { id: 'companies' as TabType, label: t('companies'), icon: Building2 },
+    { id: 'employees' as TabType, label: t('employees'), icon: Users, badge: employeeCount },
+    { id: 'payroll' as TabType, label: t('payroll'), icon: Calculator, statusDot: payrollRunStatus },
+    { id: 'journal' as TabType, label: t('journal'), icon: BookOpen },
+    { id: 'payslips' as TabType, label: t('payslips'), icon: FileText },
+    { id: 'attendance' as TabType, label: t('attendance'), icon: Clock },
+    { id: 'reports' as TabType, label: t('reports'), icon: Download },
+    { id: 'auth' as TabType, label: t('auth'), icon: ShieldCheck },
+    { id: 'architecture' as TabType, label: t('architecture'), icon: FolderTree },
+    { id: 'worker' as TabType, label: t('worker'), icon: Terminal },
+    { id: 'settings' as TabType, label: t('settings'), icon: Settings }
   ];
 
   return (
@@ -67,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <nav className="flex-1 p-4 space-y-1 text-sm">
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
-          System Modules
+          {t('systemModules', 'الوحدات والأقسام')}
         </div>
 
         {menuItems.map(item => {

@@ -1,5 +1,15 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { UserRole, UserSafeProfile } from '../types';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode
+} from 'react';
+
+import {
+  UserRole,
+  UserSafeProfile
+} from '../types';
 
 interface AuthContextType {
   user: UserSafeProfile | null;
@@ -8,182 +18,419 @@ interface AuthContextType {
   role: UserRole | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+
+  login: (
+    username: string,
+    password: string
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+
   logout: () => Promise<void>;
   refreshAuthToken: () => Promise<boolean>;
-  authFetch: (url: string, options?: RequestInit) => Promise<Response>;
+
+  authFetch: (
+    url: string,
+    options?: RequestInit
+  ) => Promise<Response>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext =
+  createContext<AuthContextType | undefined>(
+    undefined
+  );
 
-const ACCESS_TOKEN_KEY = 'apex_payroll_access_token';
-const REFRESH_TOKEN_KEY = 'apex_payroll_refresh_token';
-const USER_KEY = 'apex_payroll_user';
+const ACCESS_TOKEN_KEY =
+  'hma_payroll_access_token';
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserSafeProfile | null>(() => {
-    const saved = localStorage.getItem(USER_KEY);
-    return saved ? JSON.parse(saved) : null;
-  });
+const REFRESH_TOKEN_KEY =
+  'hma_payroll_refresh_token';
 
-  const [accessToken, setAccessToken] = useState<string | null>(() => {
-    return localStorage.getItem(ACCESS_TOKEN_KEY);
-  });
+const USER_KEY =
+  'hma_payroll_user';
 
-  const [refreshToken, setRefreshToken] = useState<string | null>(() => {
-    return localStorage.getItem(REFRESH_TOKEN_KEY);
-  });
 
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+export const AuthProvider:
+React.FC<{ children: ReactNode }> = ({
+  children
+}) => {
 
-  // Default admin fallback if not logged in
-  useEffect(() => {
-    const initAuth = async () => {
-      if (accessToken && refreshToken) {
-        // Validate profile
-        try {
-          const res = await fetch('/api/auth/me', {
-            headers: { Authorization: `Bearer ${accessToken}` }
-          });
-          const data = await res.json();
-          if (data.success) {
-            setUser(data.data.user);
-            localStorage.setItem(USER_KEY, JSON.stringify(data.data.user));
-          } else {
-            // Try refresh
-            await refreshAuthToken();
-          }
-        } catch (e) {
-          console.warn('Auth token verification failed on init:', e);
-        }
-      } else {
-        // Auto demo login as admin on first launch
-        await autoDemoLoginAdmin();
+  const [user, setUser] =
+    useState<UserSafeProfile | null>(() => {
+
+      const saved =
+        localStorage.getItem(USER_KEY);
+
+      try {
+        return saved
+          ? JSON.parse(saved)
+          : null;
+      } catch {
+        return null;
       }
-      setIsLoading(false);
+    });
+
+
+  const [accessToken, setAccessToken] =
+    useState<string | null>(() =>
+      localStorage.getItem(
+        ACCESS_TOKEN_KEY
+      )
+    );
+
+
+  const [refreshToken, setRefreshToken] =
+    useState<string | null>(() =>
+      localStorage.getItem(
+        REFRESH_TOKEN_KEY
+      )
+    );
+
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+
+  useEffect(() => {
+
+    const initAuth = async () => {
+
+      if (!accessToken || !refreshToken) {
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+
+        const res = await fetch(
+          '/api/auth/me',
+          {
+            headers: {
+              Authorization:
+                `Bearer ${accessToken}`
+            }
+          }
+        );
+
+        const data = await res.json();
+
+        if (data.success) {
+
+          setUser(data.data.user);
+
+          localStorage.setItem(
+            USER_KEY,
+            JSON.stringify(
+              data.data.user
+            )
+          );
+
+        } else {
+
+          const refreshed =
+            await refreshAuthToken();
+
+          if (!refreshed) {
+            clearAuth();
+          }
+        }
+
+      } catch (err) {
+
+        console.warn(
+          'Authentication check failed:',
+          err
+        );
+
+        clearAuth();
+
+      } finally {
+
+        setIsLoading(false);
+
+      }
     };
 
     initAuth();
+
   }, []);
 
-  const autoDemoLoginAdmin = async () => {
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'admin', password: 'AdminPassword123!' })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setAccessToken(data.data.tokens.accessToken);
-        setRefreshToken(data.data.tokens.refreshToken);
-        setUser(data.data.user);
-        localStorage.setItem(ACCESS_TOKEN_KEY, data.data.tokens.accessToken);
-        localStorage.setItem(REFRESH_TOKEN_KEY, data.data.tokens.refreshToken);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.data.user));
-      }
-    } catch (e) {
-      console.warn('Auto demo login failed:', e);
-    }
+
+  const clearAuth = () => {
+
+    setUser(null);
+    setAccessToken(null);
+    setRefreshToken(null);
+
+    localStorage.removeItem(
+      USER_KEY
+    );
+
+    localStorage.removeItem(
+      ACCESS_TOKEN_KEY
+    );
+
+    localStorage.removeItem(
+      REFRESH_TOKEN_KEY
+    );
   };
 
-  const login = async (username: string, password: string) => {
+
+  const login = async (
+    username: string,
+    password: string
+  ) => {
+
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+
+      const res = await fetch(
+        '/api/auth/login',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/json'
+          },
+          body: JSON.stringify({
+            username,
+            password
+          })
+        }
+      );
+
       const data = await res.json();
 
       if (!data.success) {
-        return { success: false, error: data.error?.message || 'Login failed.' };
+
+        return {
+          success: false,
+          error:
+            data.error?.message ||
+            'Login failed.'
+        };
       }
 
-      const { user: u, tokens } = data.data;
-      setUser(u);
-      setAccessToken(tokens.accessToken);
-      setRefreshToken(tokens.refreshToken);
+      const {
+        user: loggedUser,
+        tokens
+      } = data.data;
 
-      localStorage.setItem(USER_KEY, JSON.stringify(u));
-      localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-      localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+      setUser(loggedUser);
 
-      return { success: true };
+      setAccessToken(
+        tokens.accessToken
+      );
+
+      setRefreshToken(
+        tokens.refreshToken
+      );
+
+      localStorage.setItem(
+        USER_KEY,
+        JSON.stringify(loggedUser)
+      );
+
+      localStorage.setItem(
+        ACCESS_TOKEN_KEY,
+        tokens.accessToken
+      );
+
+      localStorage.setItem(
+        REFRESH_TOKEN_KEY,
+        tokens.refreshToken
+      );
+
+      return {
+        success: true
+      };
+
     } catch (err: any) {
-      return { success: false, error: err.message || 'Network error during login' };
+
+      return {
+        success: false,
+        error:
+          err.message ||
+          'Network error during login.'
+      };
     }
   };
+
 
   const logout = async () => {
+
     try {
+
       if (accessToken) {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
+
+        await fetch(
+          '/api/auth/logout',
+          {
+            method: 'POST',
+            headers: {
+              Authorization:
+                `Bearer ${accessToken}`
+            }
+          }
+        );
       }
-    } catch (e) {
-      console.warn('Logout API error:', e);
+
+    } catch (err) {
+
+      console.warn(
+        'Logout API error:',
+        err
+      );
+
     } finally {
-      setUser(null);
-      setAccessToken(null);
-      setRefreshToken(null);
-      localStorage.removeItem(USER_KEY);
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
+
+      clearAuth();
+
     }
   };
 
-  const refreshAuthToken = async (): Promise<boolean> => {
-    if (!refreshToken) return false;
 
-    try {
-      const res = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
-      });
-      const data = await res.json();
+  const refreshAuthToken =
+    async (): Promise<boolean> => {
 
-      if (data.success) {
-        const newAccess = data.data.accessToken;
-        const newRefresh = data.data.refreshToken;
-        setAccessToken(newAccess);
-        setRefreshToken(newRefresh);
-        localStorage.setItem(ACCESS_TOKEN_KEY, newAccess);
-        localStorage.setItem(REFRESH_TOKEN_KEY, newRefresh);
-        return true;
-      } else {
-        // Refresh token invalid, clear auth
-        logout();
+      if (!refreshToken) {
         return false;
       }
-    } catch (err) {
-      console.error('Failed to refresh token:', err);
-      return false;
-    }
-  };
 
-  const authFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
-    const headers = new Headers(options.headers || {});
+      try {
+
+        const res = await fetch(
+          '/api/auth/refresh',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type':
+                'application/json'
+            },
+            body: JSON.stringify({
+              refreshToken
+            })
+          }
+        );
+
+        const data =
+          await res.json();
+
+        if (!data.success) {
+          clearAuth();
+          return false;
+        }
+
+        const newAccess =
+          data.data.accessToken;
+
+        const newRefresh =
+          data.data.refreshToken;
+
+        setAccessToken(
+          newAccess
+        );
+
+        setRefreshToken(
+          newRefresh
+        );
+
+        localStorage.setItem(
+          ACCESS_TOKEN_KEY,
+          newAccess
+        );
+
+        localStorage.setItem(
+          REFRESH_TOKEN_KEY,
+          newRefresh
+        );
+
+        return true;
+
+      } catch (err) {
+
+        console.error(
+          'Failed to refresh token:',
+          err
+        );
+
+        clearAuth();
+
+        return false;
+      }
+    };
+
+
+  const authFetch = async (
+    url: string,
+    options: RequestInit = {}
+  ): Promise<Response> => {
+
+    const headers =
+      new Headers(
+        options.headers || {}
+      );
+
     if (accessToken) {
-      headers.set('Authorization', `Bearer ${accessToken}`);
-    }
-    if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
-      headers.set('Content-Type', 'application/json');
+
+      headers.set(
+        'Authorization',
+        `Bearer ${accessToken}`
+      );
     }
 
-    let response = await fetch(url, { ...options, headers });
+    if (
+      !headers.has('Content-Type') &&
+      options.body &&
+      typeof options.body === 'string'
+    ) {
+      headers.set(
+        'Content-Type',
+        'application/json'
+      );
+    }
 
-    // Handle token expiration & retry with token refresh
-    if (response.status === 401) {
-      const refreshed = await refreshAuthToken();
+
+    let response =
+      await fetch(
+        url,
+        {
+          ...options,
+          headers
+        }
+      );
+
+
+    if (
+      response.status === 401
+    ) {
+
+      const refreshed =
+        await refreshAuthToken();
+
       if (refreshed) {
-        const latestAccess = localStorage.getItem(ACCESS_TOKEN_KEY);
+
+        const latestAccess =
+          localStorage.getItem(
+            ACCESS_TOKEN_KEY
+          );
+
         if (latestAccess) {
-          headers.set('Authorization', `Bearer ${latestAccess}`);
-          response = await fetch(url, { ...options, headers });
+
+          headers.set(
+            'Authorization',
+            `Bearer ${latestAccess}`
+          );
+
+          response =
+            await fetch(
+              url,
+              {
+                ...options,
+                headers
+              }
+            );
         }
       }
     }
@@ -191,14 +438,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return response;
   };
 
+
   return (
+
     <AuthContext.Provider
       value={{
         user,
         accessToken,
         refreshToken,
-        role: user?.role || null,
-        isAuthenticated: !!user && !!accessToken,
+        role:
+          user?.role || null,
+        isAuthenticated:
+          !!user &&
+          !!accessToken,
         isLoading,
         login,
         logout,
@@ -208,13 +460,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     >
       {children}
     </AuthContext.Provider>
+
   );
 };
 
+
 export const useAuth = () => {
-  const context = useContext(AuthContext);
+
+  const context =
+    useContext(AuthContext);
+
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+
+    throw new Error(
+      'useAuth must be used within an AuthProvider'
+    );
   }
+
   return context;
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Employee, Department, PayrollRun, AttendanceRecord, SystemConfig, AuditLog } from './types';
 import { defaultConfig } from './config';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar, TabType } from './components/Sidebar';
 import { OverviewTab } from './components/OverviewTab';
@@ -16,11 +17,12 @@ import { AuthTab } from './components/AuthTab';
 import { ArchitectureTab } from './components/ArchitectureTab';
 import { WorkerConsoleTab } from './components/WorkerConsoleTab';
 import { SettingsTab } from './components/SettingsTab';
+import { LoginModal } from './components/LoginModal';
 import { getCurrentPeriod } from './utils/dateHelper';
 import { ShieldAlert, X } from 'lucide-react';
 
 function MainAppContent() {
-  const { authFetch, user, companyId } = useAuth();
+  const { authFetch, user, companyId, isAuthenticated, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [currentPeriod] = useState<string>(getCurrentPeriod());
   
@@ -36,6 +38,11 @@ function MainAppContent() {
 
   // Load initial backend state using JWT authFetch
   const loadData = async () => {
+    // Do not call protected API endpoints before authentication is ready.
+    if (isLoading || !isAuthenticated || !user) {
+      return;
+    }
+
     try {
       const [empRes, runsRes, attRes, cfgRes, logsRes] = await Promise.all([
         authFetch('/api/employees').then(r => r.json()),
@@ -62,8 +69,10 @@ function MainAppContent() {
   };
 
   useEffect(() => {
-    loadData();
-  }, [currentPeriod, user?.role, companyId]);
+    if (!isLoading && isAuthenticated && user) {
+      loadData();
+    }
+  }, [currentPeriod, user?.role, companyId, isAuthenticated, isLoading]);
 
   // Handler functions targeting Express API routes with error interceptor
   const handleResponseErrors = (json: any) => {
@@ -170,6 +179,20 @@ function MainAppContent() {
   };
 
   const latestRun = payrollRuns.length > 0 ? payrollRuns[payrollRuns.length - 1] : undefined;
+
+  // Wait until authentication state is resolved.
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        جاري تحميل النظام...
+      </div>
+    );
+  }
+
+  // Do not render the payroll system until a real user is authenticated.
+  if (!isAuthenticated || !user) {
+    return <LoginModal isOpen={true} />;
+  }
 
   return (
     <div id="payroll-system-app" className="min-h-screen bg-[#F1F5F9] text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
@@ -294,8 +317,10 @@ function MainAppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MainAppContent />
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <MainAppContent />
+      </AuthProvider>
+    </LanguageProvider>
   );
 }

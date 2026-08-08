@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Terminal, Shield, LogOut, User, KeyRound } from 'lucide-react';
+import { Terminal, Shield, LogOut, KeyRound, Globe } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { LoginModal } from './LoginModal';
 
 interface NavbarProps {
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRunWorker
 }) => {
   const { user, logout } = useAuth();
+  const { language, toggleLanguage, t } = useLanguage();
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   const getRoleBadgeColor = (role?: string) => {
@@ -55,11 +57,22 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Language Toggle Button */}
+          <button
+            id="btn-language-toggle"
+            onClick={toggleLanguage}
+            title={language === 'ar' ? 'Switch to English' : 'التحويل إلى العربية'}
+            className="px-2.5 py-1.5 bg-slate-800 text-white hover:bg-slate-700 rounded text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+          >
+            <Globe className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-bold">{language === 'ar' ? 'English 🇬🇧' : 'العربية 🇸🇦'}</span>
+          </button>
+
           {/* API Status Badge */}
           <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-xs">
             <span className={`w-2 h-2 rounded-full ${apiStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
             <span className="text-slate-700 font-medium text-[11px]">
-              API {apiStatus === 'online' ? 'Connected' : 'Connecting...'}
+              {apiStatus === 'online' ? t('apiConnected') : t('apiConnecting')}
             </span>
           </div>
 
@@ -70,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-xs font-semibold border border-slate-200 shadow-xs flex items-center gap-1.5 active:scale-[0.98] cursor-pointer"
           >
             <Terminal className="w-3.5 h-3.5 text-blue-600" />
-            <span className="hidden md:inline">Run Payroll Worker</span>
+            <span className="hidden md:inline">{t('runPayrollWorker')}</span>
           </button>
 
           {/* User Auth Profile Badge & Switcher */}

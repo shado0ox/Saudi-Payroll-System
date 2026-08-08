@@ -5,9 +5,9 @@ export const openapiSpec = {
     version: '1.0.0',
     description: `توثيق رسمي شامل لكافة واجهات برمجة التطبيقات (API Endpoints) الخاصة بنظام مسير الرواتب والامتثال لنظام العمل السعودي والتأمينات الاجتماعية (GOSI) وحماية الأجور (WPS)، بالإضافة إلى القيود المحاسبية المزدوجة والنظام متعدد الشركات (Multi-Tenant).
 
-### الأمان والتوثيق (Authentication & Headers)
+### الأمان والتوثيق (Authentication)
 * **Bearer Token**: استخدم \`Authorization: Bearer <your_jwt_token>\` للدخول.
-* **X-Company-Id**: رأس اختياريا لتحديد الشركة المستهدفة (\`comp-101\`, \`comp-102\`, إلخ).`,
+* يتم تحديد الشركة الحالية تلقائياً من حساب المستخدم الموثق في قاعدة البيانات، ولا يتم قبول معرّف الشركة من ترويسات الطلب.`,
     contact: {
       name: 'فريق دعم نظام الرواتب',
       email: 'support@payroll.sa'
@@ -26,12 +26,6 @@ export const openapiSpec = {
         scheme: 'bearer',
         bearerFormat: 'JWT',
         description: 'رمز JWT المعطى عند تسجل الدخول'
-      },
-      CompanyHeader: {
-        type: 'apiKey',
-        in: 'header',
-        name: 'X-Company-Id',
-        description: 'معرّف الشركة لتصفية البيانات في البيئة متعددة المستأجرين (Multi-Tenant)'
       }
     },
     schemas: {
@@ -56,13 +50,13 @@ export const openapiSpec = {
           name: { type: 'string', example: 'مدير النظام' },
           email: { type: 'string', example: 'admin@payroll.sa' },
           role: { type: 'string', enum: ['admin', 'hr_manager', 'payroll_officer', 'employee'], example: 'admin' },
-          companyId: { type: 'string', example: 'comp-101' }
+          companyId: { type: 'string', example: '{company-id}' }
         }
       },
       Company: {
         type: 'object',
         properties: {
-          id: { type: 'string', example: 'comp-101' },
+          id: { type: 'string', example: '{company-id}' },
           name: { type: 'string', example: 'شركة الرؤية للحلول البرمجية' },
           code: { type: 'string', example: 'VISION' },
           crNumber: { type: 'string', example: '1010123456' },
@@ -104,7 +98,7 @@ export const openapiSpec = {
         required: ['firstName', 'lastName', 'nationalId', 'email', 'department', 'position', 'baseSalary'],
         properties: {
           id: { type: 'string', example: 'emp-101' },
-          companyId: { type: 'string', example: 'comp-101' },
+          companyId: { type: 'string', example: '{company-id}' },
           employeeCode: { type: 'string', example: 'EMP-001' },
           firstName: { type: 'string', example: 'سارة' },
           lastName: { type: 'string', example: 'الحربي' },
@@ -132,7 +126,7 @@ export const openapiSpec = {
         type: 'object',
         properties: {
           id: { type: 'string', example: 'pr-2026-08' },
-          companyId: { type: 'string', example: 'comp-101' },
+          companyId: { type: 'string', example: '{company-id}' },
           runCode: { type: 'string', example: 'PAY-202608' },
           title: { type: 'string', example: 'مسير رواتب شهر أغسطس 2026' },
           period: { type: 'string', example: '2026-08' },
@@ -149,7 +143,7 @@ export const openapiSpec = {
         type: 'object',
         properties: {
           id: { type: 'string', example: 'je-101' },
-          companyId: { type: 'string', example: 'comp-101' },
+          companyId: { type: 'string', example: '{company-id}' },
           runId: { type: 'string', example: 'pr-2026-08' },
           runCode: { type: 'string', example: 'PAY-202608' },
           reference: { type: 'string', example: 'PAY-202608' },
@@ -183,7 +177,7 @@ export const openapiSpec = {
     }
   },
   security: [
-    { BearerAuth: [], CompanyHeader: [] }
+    { BearerAuth: [] }
   ],
   paths: {
     '/auth/login': {
@@ -245,7 +239,7 @@ export const openapiSpec = {
                   name: { type: 'string', example: 'محمد العتيبي' },
                   email: { type: 'string', example: 'm.otaibi@company.sa' },
                   role: { type: 'string', example: 'payroll_officer' },
-                  companyId: { type: 'string', example: 'comp-101' }
+                  companyId: { type: 'string', example: '{company-id}' }
                 }
               }
             }
@@ -358,7 +352,7 @@ export const openapiSpec = {
         tags: ['إدارة الشركات (Companies & Tenants)'],
         summary: 'جلب تفاصيل شركة محددة بحسب المعرف',
         parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' }, example: 'comp-101' }
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' }, example: '{company-id}' }
         ],
         responses: {
           200: {
@@ -372,7 +366,7 @@ export const openapiSpec = {
         tags: ['إدارة الشركات (Companies & Tenants)'],
         summary: 'تحديث إعدادات ودليل حسابات وربط API الشركة',
         parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' }, example: 'comp-101' }
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' }, example: '{company-id}' }
         ],
         requestBody: {
           required: true,
@@ -400,7 +394,7 @@ export const openapiSpec = {
         tags: ['إدارة الشركات (Companies & Tenants)'],
         summary: 'فحص واختبار الاتصال والترحيل مع نظام ERP المحاسبي الخاص بالشركة',
         parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' }, example: 'comp-101' }
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' }, example: '{company-id}' }
         ],
         responses: {
           200: {

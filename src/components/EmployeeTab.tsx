@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Employee, Department, SystemConfig } from '../types';
 import { formatCurrency } from '../utils/currency';
 import { UserPlus, Search, Edit2, Trash2, X, Plus, ShieldCheck, Lock } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 interface EmployeeTabProps {
   employees: Employee[];
@@ -18,6 +19,7 @@ export const EmployeeTab: React.FC<EmployeeTabProps> = ({
   onAddEmployee,
   onDeleteEmployee
 }) => {
+  const { t } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -87,7 +89,7 @@ export const EmployeeTab: React.FC<EmployeeTabProps> = ({
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3.5 py-2 rounded shadow-xs transition-all cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
-          <span>Add New Employee</span>
+          <span>{t('addNewEmployee')}</span>
         </button>
       </div>
 
@@ -98,7 +100,7 @@ export const EmployeeTab: React.FC<EmployeeTabProps> = ({
           <input
             id="input-search-employees"
             type="text"
-            placeholder="Search by name, employee code, position..."
+            placeholder={t('search')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full bg-white border border-slate-300 rounded pl-9 pr-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-xs"
@@ -111,7 +113,7 @@ export const EmployeeTab: React.FC<EmployeeTabProps> = ({
           onChange={e => setSelectedDept(e.target.value)}
           className="bg-white border border-slate-300 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer shadow-xs"
         >
-          <option value="all">All Departments ({employees.length})</option>
+          <option value="all">{t('department')} ({employees.length})</option>
           {departments.map(d => (
             <option key={d.id} value={d.name}>{d.name}</option>
           ))}
@@ -124,13 +126,13 @@ export const EmployeeTab: React.FC<EmployeeTabProps> = ({
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
               <tr>
-                <th className="px-4 py-2.5">Employee ID & Name</th>
-                <th className="px-4 py-2.5">Department & Position</th>
-                <th className="px-4 py-2.5">Basic Salary</th>
-                <th className="px-4 py-2.5">Allowances</th>
-                <th className="px-4 py-2.5">GOSI Status</th>
-                <th className="px-4 py-2.5">Bank IBAN</th>
-                <th className="px-4 py-2.5 text-right">Actions</th>
+                <th className="px-4 py-2.5">{t('fullName')}</th>
+                <th className="px-4 py-2.5">{t('department')} & {t('position')}</th>
+                <th className="px-4 py-2.5">{t('baseSalary')}</th>
+                <th className="px-4 py-2.5">{t('housingAllowance')} & {t('transportAllowance')}</th>
+                <th className="px-4 py-2.5">GOSI</th>
+                <th className="px-4 py-2.5">{t('bankName')} & {t('ibanNumber')}</th>
+                <th className="px-4 py-2.5 text-right">{t('actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-800">

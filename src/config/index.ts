@@ -18,10 +18,3 @@ export const defaultConfig: SystemConfig = {
   autoProcessSchedule: 'Monthly on 25th',
   updatedAt: new Date().toISOString()
 };
-
-export const SERVER_CONFIG = {
-  port: parseInt(process.env.PORT || '3000', 10),
-  host: '0.0.0.0',
-  env: process.env.NODE_ENV || 'development',
-  dbFilePath: './data/payroll_db.json'
-};

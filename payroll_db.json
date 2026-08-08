@@ -1,0 +1,49 @@
+{
+  "config": {
+    "companyName": "Apex Enterprise Solutions Co.",
+    "currency": "SAR",
+    "currencySymbol": "ر.س",
+    "socialSecurityEmployeeRate": 0.09,
+    "socialSecurityEmployerRate": 0.11,
+    "standardMonthlyWorkDays": 30,
+    "overtimeHourlyMultiplier": 1.5,
+    "taxBrackets": [
+      {
+        "min": 0,
+        "max": 3000,
+        "rate": 0
+      },
+      {
+        "min": 3000,
+        "max": 8000,
+        "rate": 0.05
+      },
+      {
+        "min": 8000,
+        "max": 15000,
+        "rate": 0.1
+      },
+      {
+        "min": 15000,
+        "max": 30000,
+        "rate": 0.15
+      },
+      {
+        "min": 30000,
+        "max": null,
+        "rate": 0.2
+      }
+    ],
+    "autoProcessSchedule": "Monthly on 25th",
+    "updatedAt": "2026-08-08T02:14:05.449Z"
+  },
+  "companies": [],
+  "roles": [],
+  "users": [],
+  "departments": [],
+  "employees": [],
+  "attendance": [],
+  "payrollRuns": [],
+  "auditLogs": [],
+  "journalEntries": []
+}

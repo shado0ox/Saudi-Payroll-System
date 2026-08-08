@@ -1,12 +1,59 @@
 import { JournalEntryModel } from '../models/JournalEntryModel';
 import { AccountingIntegrationService } from './accountingIntegrationService';
-import { getDatabase, saveDatabase } from '../models/db';
+import { db } from '../database/postgres';
 import { logger } from '../utils/logger';
 
 export class JournalRetryService {
+
   /**
-   * Hourly Cron Job function that retries sending failed journal entries
-   * where retry_count < 5. If retry_count reaches or exceeds 5, sends an alert notification.
+   * Write audit log directly to PostgreSQL.
+   */
+  private static async writeAuditLog(
+    companyId: string,
+    action: string,
+    userName: string,
+    details: string,
+    module: string = 'Accounting'
+  ): Promise<void> {
+
+    await db.query(
+      `
+      INSERT INTO audit_logs (
+        id,
+        company_id,
+        timestamp,
+        action,
+        user_name,
+        details,
+        module
+      )
+      VALUES (
+        $1,
+        $2,
+        CURRENT_TIMESTAMP,
+        $3,
+        $4,
+        $5,
+        $6
+      )
+      `,
+      [
+        `log-${Date.now()}-${Math.random()
+          .toString(36)
+          .substring(2, 8)}`,
+        companyId,
+        action,
+        userName,
+        details,
+        module
+      ]
+    );
+  }
+
+
+  /**
+   * Hourly job:
+   * Retry failed journal entries while retryCount < maxRetries.
    */
   public static async runJournalRetryCronJob(): Promise<{
     processedCount: number;
@@ -15,165 +62,552 @@ export class JournalRetryService {
     maxRetryAlertsSent: number;
     logs: string[];
   }> {
-    const logs: string[] = [];
-    const timestamp = new Date().toISOString();
-    logs.push(`🕒 [CRON JOB STARTED] Running hourly journal retry scan at ${timestamp}`);
-    logger.info(`🕒 [CRON] Starting hourly journal retry job`);
 
-    const failedEntries = JournalEntryModel.getFailedEntriesForRetry();
-    logs.push(`Found ${failedEntries.length} failed journal entries eligible for auto-retry (retryCount < 5)`);
+    const logs: string[] = [];
+
+    const timestamp =
+      new Date().toISOString();
+
+    logs.push(
+      `🕒 [CRON JOB STARTED] Running journal retry scan at ${timestamp}`
+    );
+
+    logger.info(
+      '🕒 [CRON] Starting journal retry job'
+    );
+
+
+    /*
+     * PostgreSQL:
+     * returns failed entries from all companies.
+     */
+    const failedEntries =
+      await JournalEntryModel
+        .getFailedEntriesForRetry();
+
+
+    logs.push(
+      `Found ${failedEntries.length} failed journal entries eligible for retry.`
+    );
+
 
     let succeededCount = 0;
     let failedCount = 0;
     let maxRetryAlertsSent = 0;
 
-    const accountingService = new AccountingIntegrationService();
+
+    const accountingService =
+      new AccountingIntegrationService();
+
 
     for (const entry of failedEntries) {
-      logs.push(`Attempting retry for Journal Entry ${entry.reference} (Current Retry: ${entry.retryCount}/${entry.maxRetries})...`);
 
-      const res = await accountingService.postDirectJournalPayload(entry.journalData);
+      /*
+       * Skip malformed old records.
+       */
+      if (!entry.companyId) {
 
-      if (res.success) {
-        succeededCount++;
-        entry.status = 'confirmed';
-        entry.transactionId = res.transactionId || `TX-RETRY-${Date.now()}`;
-        entry.sentAt = new Date().toISOString();
-        entry.lastError = undefined;
-        entry.updatedAt = new Date().toISOString();
-        JournalEntryModel.save(entry);
+        const warning =
+          `⚠️ Journal ${entry.id} skipped because companyId is missing.`;
 
-        const msg = `✅ [RETRY SUCCESS] Journal ${entry.reference} successfully posted! Tx ID: ${entry.transactionId}`;
-        logs.push(msg);
-        logger.info(msg);
+        logs.push(warning);
+        logger.warn(warning);
 
-        // Record in audit logs
-        const db = getDatabase();
-        db.auditLogs.unshift({
-          id: `log-retry-succ-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          action: 'CRON_JOURNAL_RETRY_SUCCESS',
-          user: 'Hourly Cron Worker',
-          details: `Successfully posted journal ${entry.reference} on retry ${entry.retryCount}. Tx: ${entry.transactionId}`,
-          module: 'Accounting'
-        });
-        saveDatabase(db);
-      } else {
-        failedCount++;
-        entry.retryCount = (entry.retryCount || 0) + 1;
-        entry.lastError = res.error || 'Retry attempt failed';
-        entry.updatedAt = new Date().toISOString();
+        continue;
+      }
 
-        const errMsg = `❌ [RETRY FAILED] Journal ${entry.reference} failed attempt ${entry.retryCount}/${entry.maxRetries}: ${entry.lastError}`;
-        logs.push(errMsg);
-        logger.warn(errMsg);
 
-        // Check if max retries limit (5) reached
-        if (entry.retryCount >= (entry.maxRetries || 5) && !entry.alertSent) {
-          maxRetryAlertsSent++;
-          entry.alertSent = true;
+      logs.push(
+        `Retrying Journal ${entry.reference} (${entry.retryCount}/${entry.maxRetries})`
+      );
 
-          const alertMsg = `🚨 [CRITICAL ALERT DISPATCHED] Journal Entry ${entry.reference} reached MAX RETRIES (${entry.retryCount}/${entry.maxRetries}). Email notification dispatched to finance-team@apexpayroll.com and Slack alert posted to #accounting-alerts!`;
-          logs.push(alertMsg);
-          logger.error(alertMsg);
 
-          const db = getDatabase();
-          db.auditLogs.unshift({
-            id: `log-alert-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            action: 'MAX_RETRIES_ALERT_DISPATCHED',
-            user: 'Hourly Cron Worker Alert Manager',
-            details: `Alert dispatched (Email & Slack) for journal ${entry.reference}. Reached max ${entry.maxRetries} failed attempts. Error: ${entry.lastError}`,
-            module: 'Accounting'
-          });
-          saveDatabase(db);
+      try {
+
+        const result =
+          await accountingService
+            .postDirectJournalPayload(
+              entry.journalData
+            );
+
+
+        /*
+         * =============================
+         * SUCCESS
+         * =============================
+         */
+        if (result.success) {
+
+          succeededCount++;
+
+          entry.status =
+            'confirmed';
+
+          entry.transactionId =
+            result.transactionId ||
+            `TX-RETRY-${Date.now()}`;
+
+          entry.sentAt =
+            new Date().toISOString();
+
+          entry.lastError =
+            undefined;
+
+          entry.updatedAt =
+            new Date().toISOString();
+
+
+          await JournalEntryModel.save(
+            entry
+          );
+
+
+          const successMessage =
+            `✅ Journal ${entry.reference} successfully posted. Transaction: ${entry.transactionId}`;
+
+          logs.push(successMessage);
+
+          logger.info(
+            successMessage
+          );
+
+
+          await this.writeAuditLog(
+            entry.companyId,
+            'CRON_JOURNAL_RETRY_SUCCESS',
+            'Journal Retry Worker',
+            `Successfully posted journal ${entry.reference}. Retry count: ${entry.retryCount}. Transaction: ${entry.transactionId}`
+          );
+
+
+          continue;
         }
 
-        JournalEntryModel.save(entry);
+
+        /*
+         * =============================
+         * FAILED
+         * =============================
+         */
+
+        failedCount++;
+
+        entry.status =
+          'failed';
+
+        entry.retryCount =
+          (entry.retryCount || 0) + 1;
+
+        entry.lastError =
+          result.error ||
+          'Journal retry failed';
+
+        entry.updatedAt =
+          new Date().toISOString();
+
+
+        const failureMessage =
+          `❌ Journal ${entry.reference} retry failed (${entry.retryCount}/${entry.maxRetries}): ${entry.lastError}`;
+
+        logs.push(
+          failureMessage
+        );
+
+        logger.warn(
+          failureMessage
+        );
+
+
+        /*
+         * Maximum retry threshold reached.
+         */
+        if (
+          entry.retryCount >=
+            (entry.maxRetries || 5) &&
+          !entry.alertSent
+        ) {
+
+          entry.alertSent =
+            true;
+
+          maxRetryAlertsSent++;
+
+
+          const alertMessage =
+            `🚨 Journal ${entry.reference} reached maximum retry attempts (${entry.retryCount}/${entry.maxRetries}).`;
+
+          logs.push(
+            alertMessage
+          );
+
+          logger.error(
+            alertMessage
+          );
+
+
+          /*
+           * We record the alert in PostgreSQL.
+           * No fake Email/Slack notification.
+           */
+          await this.writeAuditLog(
+            entry.companyId,
+            'MAX_RETRIES_ALERT_RECORDED',
+            'Journal Retry Worker',
+            `Journal ${entry.reference} reached maximum retries (${entry.retryCount}/${entry.maxRetries}). Last error: ${entry.lastError}`
+          );
+        }
+
+
+        await JournalEntryModel.save(
+          entry
+        );
+
+      } catch (error: any) {
+
+        /*
+         * Unexpected integration exception.
+         */
+        failedCount++;
+
+        entry.status =
+          'failed';
+
+        entry.retryCount =
+          (entry.retryCount || 0) + 1;
+
+        entry.lastError =
+          error?.message ||
+          'Unexpected journal retry error';
+
+        entry.updatedAt =
+          new Date().toISOString();
+
+
+        if (
+          entry.retryCount >=
+            (entry.maxRetries || 5) &&
+          !entry.alertSent
+        ) {
+
+          entry.alertSent =
+            true;
+
+          maxRetryAlertsSent++;
+
+
+          await this.writeAuditLog(
+            entry.companyId,
+            'MAX_RETRIES_ALERT_RECORDED',
+            'Journal Retry Worker',
+            `Journal ${entry.reference} reached maximum retries after an unexpected error. Error: ${entry.lastError}`
+          );
+        }
+
+
+        await JournalEntryModel.save(
+          entry
+        );
+
+
+        const unexpectedMessage =
+          `❌ Unexpected retry error for ${entry.reference}: ${entry.lastError}`;
+
+        logs.push(
+          unexpectedMessage
+        );
+
+        logger.error(
+          unexpectedMessage
+        );
       }
     }
 
-    logs.push(`🏁 [CRON JOB COMPLETED] Processed: ${failedEntries.length}, Succeeded: ${succeededCount}, Failed: ${failedCount}, Alerts Dispatched: ${maxRetryAlertsSent}`);
-    logger.info(`🏁 [CRON] Journal retry job completed`);
+
+    const completedMessage =
+      `🏁 [CRON COMPLETED] Processed: ${failedEntries.length}, Succeeded: ${succeededCount}, Failed: ${failedCount}, Max Retry Alerts: ${maxRetryAlertsSent}`;
+
+    logs.push(
+      completedMessage
+    );
+
+    logger.info(
+      completedMessage
+    );
+
 
     return {
-      processedCount: failedEntries.length,
+      processedCount:
+        failedEntries.length,
+
       succeededCount,
+
       failedCount,
+
       maxRetryAlertsSent,
+
       logs
     };
   }
 
+
   /**
-   * Single manual retry for a specific journal entry ID
+   * Manual retry for a journal entry.
+   *
+   * companyId is optional for backwards compatibility,
+   * but controllers should pass it for tenant isolation.
    */
-  public static async retrySingleEntry(entryId: string): Promise<{ success: boolean; entry?: any; message: string }> {
-    const entry = JournalEntryModel.getById(entryId);
+  public static async retrySingleEntry(
+    entryId: string,
+    companyId?: string,
+    userName: string = 'Accountant User'
+  ): Promise<{
+    success: boolean;
+    entry?: any;
+    message: string;
+  }> {
+
+    const entry =
+      await JournalEntryModel.getById(
+        entryId,
+        companyId
+      );
+
+
     if (!entry) {
-      return { success: false, message: 'Journal entry not found' };
+
+      return {
+        success: false,
+        message:
+          'Journal entry not found.'
+      };
     }
 
-    const accountingService = new AccountingIntegrationService();
-    const res = await accountingService.postDirectJournalPayload(entry.journalData);
 
-    if (res.success) {
-      entry.status = 'confirmed';
-      entry.transactionId = res.transactionId || `TX-MANUAL-${Date.now()}`;
-      entry.sentAt = new Date().toISOString();
-      entry.lastError = undefined;
-      entry.updatedAt = new Date().toISOString();
-      JournalEntryModel.save(entry);
+    if (!entry.companyId) {
 
-      const db = getDatabase();
-      db.auditLogs.unshift({
-        id: `log-man-retry-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'MANUAL_JOURNAL_RETRY_SUCCESS',
-        user: 'Accountant User',
-        details: `Manually re-posted journal entry ${entry.reference}. Tx: ${entry.transactionId}`,
-        module: 'Accounting'
-      });
-      saveDatabase(db);
+      return {
+        success: false,
+        message:
+          'Journal entry has no company assigned.'
+      };
+    }
 
-      return { success: true, entry, message: `Successfully posted journal ${entry.reference} (Tx: ${entry.transactionId})` };
-    } else {
-      entry.retryCount = (entry.retryCount || 0) + 1;
-      entry.lastError = res.error || 'Manual retry failed';
-      entry.updatedAt = new Date().toISOString();
 
-      if (entry.retryCount >= (entry.maxRetries || 5) && !entry.alertSent) {
-        entry.alertSent = true;
-        const db = getDatabase();
-        db.auditLogs.unshift({
-          id: `log-man-alert-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          action: 'MAX_RETRIES_ALERT_DISPATCHED',
-          user: 'System Alert Manager',
-          details: `Manual retry pushed retry count to ${entry.retryCount}/${entry.maxRetries}. Notification sent to Slack #accounting-alerts and Email`,
-          module: 'Accounting'
-        });
-        saveDatabase(db);
+    const accountingService =
+      new AccountingIntegrationService();
+
+
+    try {
+
+      const result =
+        await accountingService
+          .postDirectJournalPayload(
+            entry.journalData
+          );
+
+
+      /*
+       * =============================
+       * MANUAL RETRY SUCCESS
+       * =============================
+       */
+      if (result.success) {
+
+        entry.status =
+          'confirmed';
+
+        entry.transactionId =
+          result.transactionId ||
+          `TX-MANUAL-${Date.now()}`;
+
+        entry.sentAt =
+          new Date().toISOString();
+
+        entry.lastError =
+          undefined;
+
+        entry.updatedAt =
+          new Date().toISOString();
+
+
+        const saved =
+          await JournalEntryModel.save(
+            entry
+          );
+
+
+        await this.writeAuditLog(
+          entry.companyId,
+          'MANUAL_JOURNAL_RETRY_SUCCESS',
+          userName,
+          `Manually posted journal ${entry.reference}. Transaction: ${entry.transactionId}`
+        );
+
+
+        return {
+          success: true,
+          entry: saved,
+          message:
+            `Successfully posted journal ${entry.reference}.`
+        };
       }
 
-      JournalEntryModel.save(entry);
-      return { success: false, entry, message: res.error || 'Manual retry failed' };
+
+      /*
+       * =============================
+       * MANUAL RETRY FAILED
+       * =============================
+       */
+
+      entry.status =
+        'failed';
+
+      entry.retryCount =
+        (entry.retryCount || 0) + 1;
+
+      entry.lastError =
+        result.error ||
+        'Manual retry failed';
+
+      entry.updatedAt =
+        new Date().toISOString();
+
+
+      if (
+        entry.retryCount >=
+          (entry.maxRetries || 5) &&
+        !entry.alertSent
+      ) {
+
+        entry.alertSent =
+          true;
+
+
+        await this.writeAuditLog(
+          entry.companyId,
+          'MAX_RETRIES_ALERT_RECORDED',
+          userName,
+          `Manual retry caused journal ${entry.reference} to reach maximum retries (${entry.retryCount}/${entry.maxRetries}). Last error: ${entry.lastError}`
+        );
+      }
+
+
+      const saved =
+        await JournalEntryModel.save(
+          entry
+        );
+
+
+      return {
+        success: false,
+        entry: saved,
+        message:
+          entry.lastError ||
+          'Manual retry failed.'
+      };
+
+    } catch (error: any) {
+
+      entry.status =
+        'failed';
+
+      entry.retryCount =
+        (entry.retryCount || 0) + 1;
+
+      entry.lastError =
+        error?.message ||
+        'Unexpected manual retry error';
+
+      entry.updatedAt =
+        new Date().toISOString();
+
+
+      if (
+        entry.retryCount >=
+          (entry.maxRetries || 5) &&
+        !entry.alertSent
+      ) {
+
+        entry.alertSent =
+          true;
+
+
+        await this.writeAuditLog(
+          entry.companyId,
+          'MAX_RETRIES_ALERT_RECORDED',
+          userName,
+          `Journal ${entry.reference} reached maximum retries. Error: ${entry.lastError}`
+        );
+      }
+
+
+      const saved =
+        await JournalEntryModel.save(
+          entry
+        );
+
+
+      logger.error(
+        `Manual journal retry failed for ${entry.reference}:`,
+        error
+      );
+
+
+      return {
+        success: false,
+        entry: saved,
+        message:
+          entry.lastError
+      };
     }
   }
 
+
   /**
-   * Start background hourly cron interval (3600000ms = 1 hour)
+   * Start hourly scheduler.
    */
   public static startHourlyCronJob(): void {
-    logger.info('⏰ Initializing hourly cron job interval for Accounting Journal retries (1 hour cycle)');
-    // Run initial scan 5 seconds after server start
+
+    logger.info(
+      '⏰ Initializing Accounting Journal retry scheduler (1 hour cycle)'
+    );
+
+
+    /*
+     * First scan shortly after server starts.
+     */
     setTimeout(() => {
-      JournalRetryService.runJournalRetryCronJob().catch(err => logger.error('Cron job error:', err));
+
+      JournalRetryService
+        .runJournalRetryCronJob()
+        .catch(error => {
+
+          logger.error(
+            'Initial journal retry job failed:',
+            error
+          );
+
+        });
+
     }, 5000);
 
-    // Schedule hourly interval (3600000 ms)
+
+    /*
+     * Every hour.
+     */
     setInterval(() => {
-      JournalRetryService.runJournalRetryCronJob().catch(err => logger.error('Hourly Cron job error:', err));
+
+      JournalRetryService
+        .runJournalRetryCronJob()
+        .catch(error => {
+
+          logger.error(
+            'Hourly journal retry job failed:',
+            error
+          );
+
+        });
+
     }, 3600000);
   }
 }
